@@ -14,15 +14,24 @@ import { loadApp } from './loader';
 import { doPrefetchStrategy } from './prefetch';
 import { Deferred, getContainerXPath, isConstDestructAssignmentSupported, toArray } from './utils';
 
+// 存储已注册的微应用
 let microApps: Array<RegistrableApp<Record<string, unknown>>> = [];
 
+// 存储框架配置
 export let frameworkConfiguration: FrameworkConfiguration = {};
 
+// 标志框架是否已启动
 let started = false;
+// 默认的 URL 重路由配置
 const defaultUrlRerouteOnly = true;
 
+// 用于延迟框架启动的 Deferred 对象
 const frameworkStartedDefer = new Deferred<void>();
 
+/**
+ * @description: 降级处理函数：
+ * 用于处理低版本浏览器的兼容性问题。
+ */
 const autoDowngradeForLowVersionBrowser = (configuration: FrameworkConfiguration): FrameworkConfiguration => {
   const { sandbox = true, singular } = configuration;
   if (sandbox) {
@@ -208,8 +217,22 @@ export function loadMicroApp<T extends ObjectType>(
 }
 
 export function start(opts: FrameworkConfiguration = {}) {
-  frameworkConfiguration = { prefetch: true, singular: true, sandbox: true, ...opts };
-  const { prefetch, urlRerouteOnly = defaultUrlRerouteOnly, ...importEntryOpts } = frameworkConfiguration;
+  frameworkConfiguration = {
+    // 预加载 支持配置 boolean 'all' string[] 或者函数
+    prefetch: true,
+    // 在单一模式下，任何应用程序都将等待加载，直到其他应用程序取消挂载
+    // 对于一次只显示一个子应用的场景很有用
+    singular: true,
+    // 沙箱模式 支持配置 boolean 和对象
+    sandbox: true,
+    ...opts,
+  };
+  const {
+    prefetch,
+    // 是 StartOpts 唯一的配置项
+    urlRerouteOnly = defaultUrlRerouteOnly,
+    ...importEntryOpts
+  } = frameworkConfiguration;
 
   if (prefetch) {
     doPrefetchStrategy(microApps, prefetch, importEntryOpts);
