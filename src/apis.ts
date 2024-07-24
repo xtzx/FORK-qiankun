@@ -30,23 +30,28 @@ const frameworkStartedDefer = new Deferred<void>();
 
 /**
  * @description: 降级处理函数：
- * 用于处理低版本浏览器的兼容性问题。
+ * 用于处理低版本浏览器的兼容性问题，特别是那些不支持 Proxy 对象的浏览器。它会根据浏览器的特性自动调整 qiankun 框架的配置，以确保在这些环境下能够正常运行。
  */
 const autoDowngradeForLowVersionBrowser = (configuration: FrameworkConfiguration): FrameworkConfiguration => {
   const { sandbox = true, singular } = configuration;
+
+  // 检查浏览器是否支持 Proxy 对象
   if (sandbox) {
     if (!window.Proxy) {
       console.warn('[qiankun] Missing window.Proxy, proxySandbox will degenerate into snapshotSandbox');
 
+      // 如果 singular 配置为 false，给出警告
       if (singular === false) {
         console.warn(
           '[qiankun] Setting singular as false may cause unexpected behavior while your browser not support window.Proxy',
         );
       }
 
+      // 返回降级后的配置，将 sandbox 配置为 snapshotSandbox
       return { ...configuration, sandbox: typeof sandbox === 'object' ? { ...sandbox, loose: true } : { loose: true } };
     }
 
+    // 检查是否支持常量解构赋值
     if (
       !isConstDestructAssignmentSupported() &&
       (sandbox === true || (typeof sandbox === 'object' && sandbox.speedy !== false))
@@ -65,8 +70,33 @@ const autoDowngradeForLowVersionBrowser = (configuration: FrameworkConfiguration
   return configuration;
 };
 
+/**
+ * @description:
+ * https://qiankun.umijs.org/zh/api#registermicroappsapps-lifecycles
+ * 注册子应用，并且在子应用激活时，创建运行沙箱
+ * 写法如下:
+// 注册子应用
+registerMicroApps([
+  {
+    name: 'reactApp',
+    entry: '//localhost:7100',
+    container: '#container',
+    activeRule: '/react',
+  },
+  {
+    name: 'vueApp',
+    entry: '//localhost:7200',
+    container: '#container',
+    activeRule: '/vue',
+  },
+]);
+// 启动
+start();
+ */
 export function registerMicroApps<T extends ObjectType>(
+  // 必选，微应用的一些注册信息
   apps: Array<RegistrableApp<T>>,
+  // 可选，全局的微应用生命周期钩子
   lifeCycles?: FrameworkLifeCycles<T>,
 ) {
   // Each app only needs to be registered once
@@ -75,12 +105,29 @@ export function registerMicroApps<T extends ObjectType>(
   microApps = [...microApps, ...unregisteredApps];
 
   unregisteredApps.forEach((app) => {
-    const { name, activeRule, loader = noop, props, ...appConfig } = app;
-
-    registerApplication({
+    const {
+      // 必选，微应用的名称，微应用之间必须确保唯一。
       name,
+      // 必选，微应用的激活规则。
+      activeRule,
+      // 可选，loading 状态发生变化时会调用的方法。
+      loader = noop,
+      // 可选，主应用需要传递给微应用的数据。
+      props,
+      // container - string | HTMLElement - 必选，微应用的容器节点的选择器或者 Element 实例。如container: '#root' 或 container: document.querySelector('#root')。
+      // entry - string | { scripts?: string[]; styles?: string[]; html?: string } - 必选，微应用的入口。
+      ...appConfig
+    } = app;
+
+    // 调用了 single-spa 的 registerApplication 方法注册了子应用。
+    registerApplication({
+      // 标识应用程序。
+      name,
+      // 定义应用程序实例及其生命周期方法。
       app: async () => {
+        // 加载中
         loader(true);
+        // 等待主应用加载完成
         await frameworkStartedDefer.promise;
 
         const { mount, ...otherMicroAppConfigs } = (
@@ -92,7 +139,9 @@ export function registerMicroApps<T extends ObjectType>(
           ...otherMicroAppConfigs,
         };
       },
+      // 定义应用程序何时处于活动状态。
       activeWhen: activeRule,
+      // props（主应用需要传递给子应用的数据）
       customProps: props,
     });
   });
@@ -101,6 +150,16 @@ export function registerMicroApps<T extends ObjectType>(
 const appConfigPromiseGetterMap = new Map<string, Promise<ParcelConfigObjectGetter>>();
 const containerMicroAppsMap = new Map<string, MicroApp[]>();
 
+/**
+ * @description:
+ *
+ * 如果微应用不是直接跟路由关联的时候，你也可以选择手动加载微应用的方式：
+loadMicroApp({
+  name: 'app',
+  entry: '//localhost:7100',
+  container: '#yourContainer',
+});
+ */
 export function loadMicroApp<T extends ObjectType>(
   app: LoadableApp<T>,
   configuration?: FrameworkConfiguration & { autoStart?: boolean },

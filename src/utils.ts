@@ -139,12 +139,20 @@ export const isConstDestructAssignmentSupported = memoize(() => {
 
 export const qiankunHeadTagName = 'qiankun-head';
 
+/**
+ * @description 函数柯里化,包装里一下 HTML 字符串
+ * 修改 html 内容
+ * 替换 <head>
+ * 增加包装 div 并且增加属性 id data-name data-version data-sandbox-cfg 属性
+ */
 export function getDefaultTplWrapper(name: string, sandboxOpts: FrameworkConfiguration['sandbox']) {
   return (tpl: string) => {
     let tplWithSimulatedHead: string;
 
+    // 如果 tpl 中包含 <head> 标签，则将其替换为自定义的 qiankunHeadTagName 标签。
     if (tpl.indexOf('<head>') !== -1) {
-      // We need to mock a head placeholder as native head element will be erased by browser in micro app
+      // 当新的 HTML 字符串被插入到 DOM 中并且其中包含 <head> 标签时，浏览器在解析并插入这个 HTML 的过程中通常会忽略新的 <head> 内容，
+      // 因为一个文档中理论上只应存在一个 <head>. 重新插入或替换现有的 <head> 可能会引发各种问题，例如样式或者脚本的重复加载等。
       tplWithSimulatedHead = tpl
         .replace('<head>', `<${qiankunHeadTagName}>`)
         .replace('</head>', `</${qiankunHeadTagName}>`);
@@ -153,6 +161,7 @@ export function getDefaultTplWrapper(name: string, sandboxOpts: FrameworkConfigu
       tplWithSimulatedHead = `<${qiankunHeadTagName}></${qiankunHeadTagName}>${tpl}`;
     }
 
+    // ❕ ❕ ❕ 此位置就是 legacyRender 对应渲染的 HTML 内容
     return `<div id="${getWrapperId(
       name,
     )}" data-name="${name}" data-version="${version}" data-sandbox-cfg=${JSON.stringify(
@@ -161,6 +170,9 @@ export function getDefaultTplWrapper(name: string, sandboxOpts: FrameworkConfigu
   };
 }
 
+/**
+ * @description: 生成 legacyRender 模式下的沙箱容器 id
+ */
 export function getWrapperId(name: string) {
   return `__qiankun_microapp_wrapper_for_${snakeCase(name)}__`;
 }
@@ -202,6 +214,10 @@ export function validateExportLifecycle(exports: any) {
   return isFunction(bootstrap) && isFunction(mount) && isFunction(unmount);
 }
 
+/**
+ * @description: 创建一个可以在外部控制其状态的 Promise 对象。
+ * 通过这种方式，可以在异步操作完成时手动调用 resolve 或 reject 方法来改变 Promise 的状态。
+ */
 export class Deferred<T> {
   promise: Promise<T>;
 
@@ -247,6 +263,12 @@ export function performanceMeasure(measureName: string, markName: string) {
   }
 }
 
+/**
+ * @description 判断 experimentalStyleIsolation 和 strictStyleIsolation 之间关系
+ * 如果 sandbox 不是一个对象，返回 false。
+ * 如果 sandbox 对象的 strictStyleIsolation 属性为 true，返回 false。
+ * 否则，返回 sandbox 对象的 experimentalStyleIsolation 属性的布尔值。
+ */
 export function isEnableScopedCSS(sandbox: FrameworkConfiguration['sandbox']) {
   if (typeof sandbox !== 'object') {
     return false;

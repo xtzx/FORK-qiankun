@@ -70,7 +70,13 @@ type QiankunSpecialOpts = {
   sandbox?:
     | boolean
     | {
+        // 当设置为 true 时，启用严格的样式隔离模式。
+        // 在这种模式下，qiankun 会为每个微应用的容器包裹一个 Shadow DOM 节点，从而确保微应用的样式不会影响全局。
+        // 这种模式需要对接入的应用进行适配，以确保其能够正常运行在 Shadow DOM 环境中。
         strictStyleIsolation?: boolean;
+        // 当设置为 true 时，启用实验性的样式隔离功能。
+        // 这种模式下，qiankun 会通过配置 { sandbox : { experimentalStyleIsolation: true } }
+        // 开启运行时的 scoped CSS 功能，从而解决应用间的样式隔离问题。该特性还处于实验阶段，可能会有一些问题。
         experimentalStyleIsolation?: boolean;
         /**
          * @deprecated We use strict mode by default
