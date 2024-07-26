@@ -16,17 +16,20 @@ import { Deferred, getContainerXPath, isConstDestructAssignmentSupported, toArra
 
 // 存储已注册的微应用
 let microApps: Array<RegistrableApp<Record<string, unknown>>> = [];
-
 // 存储框架配置
 export let frameworkConfiguration: FrameworkConfiguration = {};
-
 // 标志框架是否已启动
+// 执行 single-spa 的 start 后设置为 true
 let started = false;
 // 默认的 URL 重路由配置
 const defaultUrlRerouteOnly = true;
-
 // 用于延迟框架启动的 Deferred 对象
 const frameworkStartedDefer = new Deferred<void>();
+// 使用 appConfigPromiseGetterMap 缓存微应用配置，以便在重新挂载时提高性能。
+const appConfigPromiseGetterMap = new Map<string, Promise<ParcelConfigObjectGetter>>();
+// 变量用于管理挂载在相同容器上的微应用实例。它的作用是确保在同一个容器中挂载多个微应用时，能够正确处理这些微应用的生命周期，避免并发问题。
+// 具体来说，当多个微应用挂载在同一个容器时，containerMicroAppsMap 会记录这些微应用的实例，并在重新挂载时确保之前的实例已经卸载完毕，从而避免并发问题。
+const containerMicroAppsMap = new Map<string, MicroApp[]>();
 
 /**
  * @description: 降级处理函数：
@@ -147,11 +150,12 @@ export function registerMicroApps<T extends ObjectType>(
   });
 }
 
-const appConfigPromiseGetterMap = new Map<string, Promise<ParcelConfigObjectGetter>>();
-const containerMicroAppsMap = new Map<string, MicroApp[]>();
-
 /**
  * @description:
+ * 其他逻辑:
+ * 缓存
+ * 生命周期函数的覆盖
+ * 重新启动single spa
  *
  * 如果微应用不是直接跟路由关联的时候，你也可以选择手动加载微应用的方式：
 loadMicroApp({
@@ -168,12 +172,20 @@ export function loadMicroApp<T extends ObjectType>(
   const { props, name } = app;
 
   const container = 'container' in app ? app.container : undefined;
-  // Must compute the container xpath at beginning to keep it consist around app running
-  // If we compute it every time, the container dom structure most probably been changed and result in a different xpath value
+  // 计算容器的 XPath 以确保在重新挂载时使用相同的容器
+  // 形如 "/*[name()='HTML']/*[name()='BODY'][1]/*[name()='DIV'][1]/*[name()='DIV'][1]/*[name()='DIV'][3]/*[name()='DIV'][1]/*[name()='H3'][2]"
+  // 必须在开始时计算容器 xpath，以使其与应用程序运行保持一致 如果我们每次都计算它，容器 dom 结构很可能会被更改并导致不同的 xpath 值
   const containerXPath = getContainerXPath(container);
+  // appContainerXPathKey是缓存的key
   const appContainerXPathKey = `${name}-${containerXPath}`;
 
   let microApp: MicroApp;
+
+  /**
+   * @description: 用于包装微应用配置
+   * 定义了一个空的 bootstrap 钩子覆盖之前的配置，以确保缓存过的不重新执行
+   * 定义了一个 mount 钩子, 用于确保在同一个容器上挂载多个微应用时，能够正确处理这些微应用的生命周期，避免并发问题
+   */
   const wrapParcelConfigForRemount = (config: ParcelConfigObject): ParcelConfigObject => {
     let microAppConfig = config;
     if (container) {
@@ -212,6 +224,8 @@ export function loadMicroApp<T extends ObjectType>(
    * using name + container xpath as the micro app instance id,
    * it means if you rendering a micro app to a dom which have been rendered before,
    * the micro app would not load and evaluate its lifecycles again
+   * 将 loadApp 的返回值缓存到 appConfigPromiseGetterMap 中,缓存key是 $$cacheLifecycleByAppName ? name : appContainerXPathKey
+   * 重新加载的时候直接从缓存中取值,不会执行生命周期方法了
    */
   const memorizedLoadingFn = async (): Promise<ParcelConfigObject> => {
     const userConfiguration = autoDowngradeForLowVersionBrowser(
@@ -237,20 +251,26 @@ export function loadMicroApp<T extends ObjectType>(
     if (container) {
       if ($$cacheLifecycleByAppName) {
         appConfigPromiseGetterMap.set(name, parcelConfigObjectGetterPromise);
+
+        // 此处将 loadApp 的返回值缓存到 appConfigPromiseGetterMap 中，以便在重新挂载时使用。
       } else if (containerXPath) appConfigPromiseGetterMap.set(appContainerXPathKey, parcelConfigObjectGetterPromise);
     }
 
     return (await parcelConfigObjectGetterPromise)(container);
   };
 
+  // 如果尚未启动，并且配置中 autoStart 不为 false，则启动 single-spa。
   if (!started && configuration?.autoStart !== false) {
     // We need to invoke start method of single-spa as the popstate event should be dispatched while the main app calling pushState/replaceState automatically,
     // but in single-spa it will check the start status before it dispatch popstate
     // see https://github.com/single-spa/single-spa/blob/f28b5963be1484583a072c8145ac0b5a28d91235/src/navigation/navigation-events.js#L101
     // ref https://github.com/umijs/qiankun/pull/1071
+    // 当主应用程序调用 pushState 或 replaceState 方法时，应该自动触发 popstate 事件。
+    // 然而，在 single-spa 框架中，popstate 事件的触发是有条件的，即它会先检查 single-spa 是否已经启动（通过调用 start 方法）。
     startSingleSpa({ urlRerouteOnly: frameworkConfiguration.urlRerouteOnly ?? defaultUrlRerouteOnly });
   }
 
+  // 使用 single-spa 的 mountRootParcel 挂载微应用，并将其存储在 containerMicroAppsMap 中
   microApp = mountRootParcel(memorizedLoadingFn, { domElement: document.createElement('div'), ...props });
 
   if (container) {
