@@ -14,11 +14,15 @@ const deps: Record<string, OnGlobalStateChangeCallback> = {};
 function emitGlobal(state: Record<string, any>, prevState: Record<string, any>) {
   Object.keys(deps).forEach((id: string) => {
     if (deps[id] instanceof Function) {
+      // 传入当前的全局状态和变更前的全局状态
       deps[id](cloneDeep(state), cloneDeep(prevState));
     }
   });
 }
 
+/**
+ * @description: 主应用才应该使用这个
+ */
 export function initGlobalState(state: Record<string, any> = {}) {
   if (process.env.NODE_ENV === 'development') {
     console.warn(`[qiankun] globalState tools will be removed in 3.0, pls don't use it!`);
@@ -34,24 +38,22 @@ export function initGlobalState(state: Record<string, any> = {}) {
   return getMicroAppStateActions(`global-${+new Date()}`, true);
 }
 
+/**
+ * @description:
+ * @param {string} id 表示子应用的唯一标识。
+ * @param {boolean} isMaster 表示是否是主应用。
+ */
 export function getMicroAppStateActions(id: string, isMaster?: boolean): MicroAppStateActions {
   return {
     /**
      * onGlobalStateChange 全局依赖监听
-     *
      * 收集 setState 时所需要触发的依赖
-     *
      * 限制条件：每个子应用只有一个激活状态的全局监听，新监听覆盖旧监听，若只是监听部分属性，请使用 onGlobalStateChange
-     *
      * 这么设计是为了减少全局监听滥用导致的内存爆炸
-     *
      * 依赖数据结构为：
      * {
      *   {id}: callback
      * }
-     *
-     * @param callback
-     * @param fireImmediately
      */
     onGlobalStateChange(callback: OnGlobalStateChangeCallback, fireImmediately?: boolean) {
       if (!(callback instanceof Function)) {
@@ -62,6 +64,8 @@ export function getMicroAppStateActions(id: string, isMaster?: boolean): MicroAp
         console.warn(`[qiankun] '${id}' global listener already exists before this, new listener will overwrite it.`);
       }
       deps[id] = callback;
+
+      // 表示立即触发回调函数。
       if (fireImmediately) {
         const cloneState = cloneDeep(globalState);
         callback(cloneState, cloneState);
@@ -70,11 +74,8 @@ export function getMicroAppStateActions(id: string, isMaster?: boolean): MicroAp
 
     /**
      * setGlobalState 更新 store 数据
-     *
      * 1. 对输入 state 的第一层属性做校验，只有初始化时声明过的第一层（bucket）属性才会被更改
      * 2. 修改 store 并触发全局监听
-     *
-     * @param state
      */
     setGlobalState(state: Record<string, any> = {}) {
       if (state === globalState) {

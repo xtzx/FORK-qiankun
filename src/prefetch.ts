@@ -18,6 +18,16 @@ declare global {
   }
 }
 
+declare global {
+  interface Navigator {
+    connection: {
+      saveData: boolean;
+      effectiveType: string;
+      type: 'bluetooth' | 'cellular' | 'ethernet' | 'none' | 'wifi' | 'wimax' | 'other' | 'unknown';
+    };
+  }
+}
+
 /**
  * @description: 模拟了 requestIdleCallback 的行为，计算剩余时间并调用回调函数。
  */
@@ -33,6 +43,7 @@ function idleCall(cb: IdleRequestCallback, start: number) {
 // 兼容处理 requestIdleCallback
 // RIC and shim for browsers setTimeout() without it idle
 let requestIdleCallback: (cb: IdleRequestCallback) => any;
+
 if (typeof window.requestIdleCallback !== 'undefined') {
   requestIdleCallback = window.requestIdleCallback;
 } else if (typeof window.MessageChannel !== 'undefined') {
@@ -55,16 +66,6 @@ if (typeof window.requestIdleCallback !== 'undefined') {
   };
 } else {
   requestIdleCallback = (cb: IdleRequestCallback) => setTimeout(idleCall, 0, cb, Date.now());
-}
-
-declare global {
-  interface Navigator {
-    connection: {
-      saveData: boolean;
-      effectiveType: string;
-      type: 'bluetooth' | 'cellular' | 'ethernet' | 'none' | 'wifi' | 'wimax' | 'other' | 'unknown';
-    };
-  }
 }
 
 /**
