@@ -2,13 +2,7 @@
  * @author Kuitos
  * @since 2020-04-0
  */
-
-import { importEntry } from 'import-html-entry';
-import { concat, forEach, mergeWith } from 'lodash';
 import type { LifeCycles, ParcelConfigObject } from 'single-spa';
-import getAddOns from './addons';
-import { QiankunError } from './error';
-import { getMicroAppStateActions } from './globalState';
 import type {
   FrameworkConfiguration,
   FrameworkLifeCycles,
@@ -17,6 +11,13 @@ import type {
   LoadableApp,
   ObjectType,
 } from './interfaces';
+
+import { importEntry } from 'import-html-entry';
+import { concat, forEach, mergeWith } from 'lodash';
+
+import getAddOns from './addons';
+import { QiankunError } from './error';
+import { getMicroAppStateActions } from './globalState';
 import { createSandboxContainer, css } from './sandbox';
 import { cachedGlobals } from './sandbox/proxySandbox';
 import {
@@ -42,6 +43,7 @@ export type ParcelConfigObjectGetter = (remountContainer?: string | HTMLElement)
 
 const rawAppendChild = HTMLElement.prototype.appendChild;
 const rawRemoveChild = HTMLElement.prototype.removeChild;
+
 let prevAppUnmountedDeferred: Deferred<void>;
 
 // 检查浏览器是否支持 Shadow DOM
@@ -50,9 +52,7 @@ const supportShadowDOM = !!document.head.attachShadow || !!(document.head as any
 // ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 /**
- * @description: 确保传入的元素存在。如果元素不存在，则抛出一个自定义错误 QiankunError，并且可以选择性地提供一个错误消息。
- * @param {Element} element
- * @param {string} msg
+ * 确保传入的元素存在。如果元素不存在，则抛出一个自定义错误 QiankunError，并且可以选择性地提供一个错误消息。
  */
 function assertElementExist(element: Element | null | undefined, msg?: string) {
   if (!element) {
@@ -65,7 +65,7 @@ function assertElementExist(element: Element | null | undefined, msg?: string) {
 }
 
 /**
- * @description: 按顺序执行一系列生命周期钩子函数，并确保这些钩子函数按顺序执行
+ * 按顺序执行一系列生命周期钩子函数，并确保这些钩子函数按顺序执行
  * hooks: 一个包含生命周期钩子函数的数组,每个钩子函数需要是异步的
  * app: 一个表示可加载应用的对象。
  * global: 一个全局对象，默认为 window。
@@ -85,7 +85,7 @@ function execHooksChain<T extends ObjectType>(
 }
 
 /**
- * @description:validate 如果是函数则执行否则当作 boolean 处理
+ * 检查 validate，如果是函数则执行 validate(app)，否则当作 boolean 处理。
  */
 async function validateSingularMode<T extends ObjectType>(
   validate: FrameworkConfiguration['singular'],
@@ -95,7 +95,7 @@ async function validateSingularMode<T extends ObjectType>(
 }
 
 /**
- * @description:据 appContent 创建一个容器元素，并根据 strictStyleIsolation 和 scopedCSS 的配置对元素进行处理。
+ * 据 appContent 创建一个容器元素，并根据 strictStyleIsolation 和 scopedCSS 的配置对元素进行处理。
  * @param appContent  HTML 内容插入到容器 注意应当是一个单节点
  * @param strictStyleIsolation 严格样式隔离
  * @param scopedCSS 启用了 scopedCSS
@@ -122,6 +122,7 @@ function createElement(
       );
     } else {
       const { innerHTML } = appElement;
+      // 不渲染 appElement 本身而是 shadow
       appElement.innerHTML = '';
       let shadow: ShadowRoot;
 
@@ -139,6 +140,7 @@ function createElement(
 
   // 如果开启了 css 命名空间功能,则根据 QiankunCSSRewriteAttr || appInstanceId 给 class 添加前缀
   if (scopedCSS) {
+    // 获得 dom 上标签属性是 'data-qiankun' 的值,默认使用 appInstanceId
     const attr = appElement.getAttribute(css.QiankunCSSRewriteAttr);
     if (!attr) {
       appElement.setAttribute(css.QiankunCSSRewriteAttr, appInstanceId);
@@ -154,7 +156,7 @@ function createElement(
 }
 
 /**
- * @description: 返回一个函数,函数返回的是:
+ * 返回一个函数,函数返回的是:
  * 如果有 app.render 就返回 id 是  `__qiankun_microapp_wrapper_for_${snakeCase(name)}__`; 的 DOM
  * 否则是新版渲染函数 返回参数 elementGetter 的结果
  * @param appInstanceId 应用实例 ID
@@ -230,6 +232,8 @@ function getRender(appInstanceId: string, appContent: string, legacyRender?: HTM
         }
       })();
 
+      // 对重复挂载的情况进行判断
+
       // 断言容器元素存在，否则抛出错误
       assertElementExist(containerElement, errorMsg);
     }
@@ -254,7 +258,7 @@ function getRender(appInstanceId: string, appContent: string, legacyRender?: HTM
 }
 
 /**
- * @description: 从传入的 scriptExports 对象中提取生命周期函数
+ * 从传入的 scriptExports 对象中提取生命周期函数
  * 如果 scriptExports 中没有有效的生命周期函数，
  * 它会尝试从全局对象 sandboxContainer?.instance?.latestSetProp (这个应该是原本 window 对象上的属性) 中获取。
  * 如果仍然没有找到，它会抛出一个自定义错误 QiankunError。
@@ -297,7 +301,7 @@ function getLifecyclesFromExports(
 // ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 /**
- * @description: 加载微应用的核心函数
+ * 加载微应用的核心函数
  * 内部实现了 html 的装载,脚本的下载和执行
  * 但是子应用脚本的 bootstrap 实际上没执行而是作为返回值
  *
@@ -418,7 +422,6 @@ export async function loadApp<T extends ObjectType>(
 
   let sandboxContainer;
 
-  // TODO:后面看看这个逻辑
   if (sandbox) {
     sandboxContainer = createSandboxContainer(
       appInstanceId,
@@ -437,6 +440,7 @@ export async function loadApp<T extends ObjectType>(
   }
 
   // 合并生命周期钩子
+  // mergeWith 方法的作用是将内置的生命周期函数与传入的 lifeCycles 生命周期函数。
   const {
     beforeUnmount = [],
     afterUnmount = [],
@@ -445,8 +449,7 @@ export async function loadApp<T extends ObjectType>(
     beforeLoad = [],
   } = mergeWith({}, getAddOns(global, assetPublicPath), lifeCycles, (v1, v2) => concat(v1 ?? [], v2 ?? []));
 
-  // 执行 beforeLoad 钩子
-  // TODO:确认:这个时候子应用的html(无js)已经被渲染了,资源已经加载了,js未执行
+  // 在注册完了生命周期函数后，立即触发了 beforeLoad 生命周期钩子函数
   await execHooksChain(toArray(beforeLoad), app, global);
 
   // 执行脚本并获取导出的生命周期函数
@@ -479,16 +482,17 @@ export async function loadApp<T extends ObjectType>(
       bootstrap,
       mount: [
         // 环境检查和性能标记
-        async () => {
-          if (process.env.NODE_ENV === 'development') {
-            const marks = performanceGetEntriesByName(markName, 'mark');
-            // mark length is zero means the app is remounting
-            if (marks && !marks.length) {
-              performanceMark(markName);
-            }
-          }
-        },
+        // async () => {
+        //   if (process.env.NODE_ENV === 'development') {
+        //     const marks = performanceGetEntriesByName(markName, 'mark');
+        //     // mark length is zero means the app is remounting
+        //     if (marks && !marks.length) {
+        //       performanceMark(markName);
+        //     }
+        //   }
+        // },
         // 验证单例模式：验证应用是否处于单例模式。如果是单例模式且之前的应用卸载延迟对象存在，返回该延迟对象的 Promise。
+        // 对单实例模式进行检测。在单实例模式下，新的子应用挂载行为会在旧的子应用卸载之后才开始。（由于这里是串行顺序执行，所以如果某一处发生阻塞的话，会阻塞所有后续的函数执行）
         async () => {
           if ((await validateSingularMode(singular, app)) && prevAppUnmountedDeferred) {
             return prevAppUnmountedDeferred.promise;
@@ -520,12 +524,14 @@ export async function loadApp<T extends ObjectType>(
           render({ element: appWrapperElement, loading: true, container: remountContainer }, 'mounting');
         },
         // 挂载沙箱
+        // 先挂载沙箱后渲染,避免全局污染, TODO:在 beforeMount 前的部分全局操作将会对主应用造成污染，如 setInterval
         mountSandbox,
         // 执行挂载前的钩子函数链
         async () => execHooksChain(toArray(beforeMount), app, global),
         // 挂载应用，传入必要的属性和容器
         async (props) => mount({ ...props, container: appWrapperGetter(), setGlobalState, onGlobalStateChange }),
-        //渲染应用包装元素，显示加载完成状态
+        // 渲染应用包装元素，显示加载完成状态
+        // 由于初始化的时候已经调用过一次 render，所以在首次调用 mount 时可能已经执行过一次 render 方法。
         async () => render({ element: appWrapperElement, loading: false, container: remountContainer }, 'mounted'),
         // 执行挂载后的钩子函数链。
         async () => execHooksChain(toArray(afterMount), app, global),

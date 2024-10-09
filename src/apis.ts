@@ -32,7 +32,7 @@ const appConfigPromiseGetterMap = new Map<string, Promise<ParcelConfigObjectGett
 const containerMicroAppsMap = new Map<string, MicroApp[]>();
 
 /**
- * @description: 降级处理函数：
+ * 降级处理函数：
  * 用于处理低版本浏览器的兼容性问题，特别是那些不支持 Proxy 对象的浏览器。它会根据浏览器的特性自动调整 qiankun 框架的配置，以确保在这些环境下能够正常运行。
  */
 const autoDowngradeForLowVersionBrowser = (configuration: FrameworkConfiguration): FrameworkConfiguration => {
@@ -74,7 +74,6 @@ const autoDowngradeForLowVersionBrowser = (configuration: FrameworkConfiguration
 };
 
 /**
- * @description:
  * https://qiankun.umijs.org/zh/api#registermicroappsapps-lifecycles
  * 注册子应用，并且在子应用激活时，创建运行沙箱
  * 写法如下:
@@ -138,6 +137,7 @@ export function registerMicroApps<T extends ObjectType>(
         )();
 
         return {
+          // 此处 loader 的执行是为了后续卸载后重新加载时，能够再次触发 loader 方法
           mount: [async () => loader(true), ...toArray(mount), async () => loader(false)],
           ...otherMicroAppConfigs,
         };
@@ -151,7 +151,6 @@ export function registerMicroApps<T extends ObjectType>(
 }
 
 /**
- * @description:
  * 其他逻辑:
  * 缓存
  * 生命周期函数的覆盖
@@ -182,7 +181,7 @@ export function loadMicroApp<T extends ObjectType>(
   let microApp: MicroApp;
 
   /**
-   * @description: 用于包装微应用配置
+   * 用于包装微应用配置
    * 定义了一个空的 bootstrap 钩子覆盖之前的配置，以确保缓存过的不重新执行
    * 定义了一个 mount 钩子, 用于确保在同一个容器上挂载多个微应用时，能够正确处理这些微应用的生命周期，避免并发问题
    */

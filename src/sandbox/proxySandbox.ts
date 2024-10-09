@@ -96,6 +96,8 @@ const cachedGlobalObjects = array2TruthyObject(cachedGlobals);
  see https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Symbol/unscopables
  */
 const unscopables = array2TruthyObject(without(cachedGlobals, ...accessingSpiedGlobals.concat(overwrittenGlobals)));
+// TODO:
+console.log('unscopables: ', unscopables, cachedGlobalObjects);
 
 const useNativeWindowForBindingsProps = new Map<PropertyKey, boolean>([
   ['fetch', true],
@@ -103,31 +105,31 @@ const useNativeWindowForBindingsProps = new Map<PropertyKey, boolean>([
 ]);
 
 function createFakeWindow(globalContext: Window, speedy: boolean) {
-  // map always has the fastest performance in has checked scenario
-  // see https://jsperf.com/array-indexof-vs-set-has/23
+  // 用于存储具有 getter 的属性。
   const propertiesWithGetter = new Map<PropertyKey, boolean>();
+  // 创建一个空的对象，作为假的 window 对象。
   const fakeWindow = {} as FakeWindow;
 
   /*
-   copy the non-configurable property of global to fakeWindow
-   see https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Proxy/handler/getOwnPropertyDescriptor
-   > A property cannot be reported as non-configurable, if it does not exist as an own property of the target object or if it exists as a configurable own property of the target object.
-   */
+  复制 window 上不可配置属性的属性到 fakeWindow
+  如果某个属性不作为目标对象的自有属性存在，或者作为目标对象的可配置自有属性存在，则该属性不能报告为不可配置
+  获取 globalContext 中的所有属性名。
+  */
   Object.getOwnPropertyNames(globalContext)
+    // 过滤出不可配置的属性
     .filter((p) => {
       const descriptor = Object.getOwnPropertyDescriptor(globalContext, p);
       return !descriptor?.configurable;
     })
     .forEach((p) => {
       const descriptor = Object.getOwnPropertyDescriptor(globalContext, p);
+      // 对每个不可配置的属性，获取其属性描述符，并将其复制到 fakeWindow 中。
       if (descriptor) {
         const hasGetter = Object.prototype.hasOwnProperty.call(descriptor, 'get');
 
         /*
-         make top/self/window property configurable and writable, otherwise it will cause TypeError while get trap return.
-         see https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Proxy/handler/get
-         > The value reported for a property must be the same as the value of the corresponding target object property if the target object property is a non-writable, non-configurable data property.
-         */
+        对于某些特殊属性（如 top、parent、self、window 和 document），将其设置为可配置和可写，以避免在代理陷阱中引发错误。
+        */
         if (
           p === 'top' ||
           p === 'parent' ||
@@ -149,10 +151,10 @@ function createFakeWindow(globalContext: Window, speedy: boolean) {
           }
         }
 
+        // 将具有 getter 的属性记录在 propertiesWithGetter 中。
         if (hasGetter) propertiesWithGetter.set(p, true);
 
-        // freeze the descriptor to avoid being modified by zone.js
-        // see https://github.com/angular/zone.js/blob/a5fe09b0fac27ac5df1fa746042f96f05ccb6a00/lib/browser/define-property.ts#L71
+        // 使用 Object.defineProperty 将属性定义在 fakeWindow 上，并冻结描述符以避免被类似 zone.js 修改。
         rawObjectDefineProperty(fakeWindow, p, Object.freeze(descriptor));
       }
     });
@@ -169,7 +171,10 @@ let activeSandboxCount = 0;
  * 基于 Proxy 实现的沙箱
  */
 export default class ProxySandbox implements SandBox {
-  /** window 值变更记录 */
+  /**
+   * 记录沙箱中更新的值，也就是每个子应用中独立的状态池
+   * window 值变更记录
+   */
   private updatedValueSet = new Set<PropertyKey>();
   private document = document;
   name: string;
@@ -227,6 +232,8 @@ export default class ProxySandbox implements SandBox {
     const descriptorTargetMap = new Map<PropertyKey, SymbolTarget>();
 
     const proxy = new Proxy(fakeWindow, {
+      // 当调用 set 向子应用 proxy/window 对象设置属性时，所有的属性设置和更新都会命中 updatedValueSet
+      // 从而避免对 window 对象产生影响（旧版本则是通过 diff 算法还原 window 对象状态快照，子应用之间的状态是隔离的，而父子应用之间 window 对象会有污染）。
       set: (target: FakeWindow, p: PropertyKey, value: any): boolean => {
         if (this.sandboxRunning) {
           this.registerRunningApp(name, proxy);
@@ -237,7 +244,7 @@ export default class ProxySandbox implements SandBox {
             // @ts-ignore
             globalContext[p] = value;
           } else {
-            // We must keep its description while the property existed in globalContext before
+            // 当该属性之前存在于 globalContext 中时，我们必须保留其描述
             if (!target.hasOwnProperty(p) && globalContext.hasOwnProperty(p)) {
               const descriptor = Object.getOwnPropertyDescriptor(globalContext, p);
               const { writable, configurable, enumerable, set } = descriptor!;
@@ -270,18 +277,22 @@ export default class ProxySandbox implements SandBox {
       get: (target: FakeWindow, p: PropertyKey): any => {
         this.registerRunningApp(name, proxy);
 
+        // 是一个内置的符号，用于定义对象的属性在 with 语句中不可用。
+        // 返回一个对象，该对象的属性名为不可用的属性名，属性值为 true。
+        // 当你在 with 语句中使用一个对象时，Symbol.unscopables 可以防止某些属性被绑定到 with 语句的作用域中。
         if (p === Symbol.unscopables) return unscopables;
-        // avoid who using window.window or window.self to escape the sandbox environment to touch the real window
-        // see https://github.com/eligrey/FileSaver.js/blob/master/src/FileSaver.js#L13
+
+        // 防止逃逸沙箱环境
         if (p === 'window' || p === 'self') {
           return proxy;
         }
 
-        // hijack globalWindow accessing with globalThis keyword
+        // 劫持 globalThis 访问
         if (p === 'globalThis' || (inTest && p === mockGlobalThis)) {
           return proxy;
         }
 
+        // 处理 top 和 parent 属性
         if (p === 'top' || p === 'parent' || (inTest && (p === mockTop || p === mockSafariTop))) {
           // if your master app in an iframe context, allow these props escape the sandbox
           if (globalContext === globalContext.parent) {
@@ -416,6 +427,10 @@ export default class ProxySandbox implements SandBox {
     }
   }
 
+  /**
+   * 不重要,逻辑设计的比较奇怪
+   * 存在主应用和子应用同时运行的情况,理论上应该是一个 appInstance[] 但是设计成单个
+   */
   private registerRunningApp(name: string, proxy: Window) {
     if (this.sandboxRunning) {
       const currentRunningApp = getCurrentRunningApp();

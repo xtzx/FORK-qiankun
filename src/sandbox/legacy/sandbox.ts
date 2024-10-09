@@ -16,23 +16,38 @@ function isPropConfigurable(target: WindowProxy, prop: PropertyKey) {
  * TODO: 为了兼容性 singular 模式下依旧使用该沙箱，等新沙箱稳定之后再切换
  */
 export default class LegacySandbox implements SandBox {
-  /** 沙箱期间新增的全局变量 */
+  /** 记录沙箱运行期间新增的全局变量 */
   private addedPropsMapInSandbox = new Map<PropertyKey, any>();
 
-  /** 沙箱期间更新的全局变量 */
+  /** 记录沙箱运行期间更新的全局变量 */
   private modifiedPropsOriginalValueMapInSandbox = new Map<PropertyKey, any>();
 
-  /** 持续记录更新的(新增和修改的)全局变量的 map，用于在任意时刻做 snapshot */
+  /**
+  /**
+   * 持续记录更新的(新增和修改的)全局变量的 map，用于在任意时刻做 snapshot
+   * 上面两个 Map 用于 关闭沙箱 时还原全局状态，而 currentUpdatedPropsValueMap 是在 激活沙箱 时还原沙箱的独立状态
+   */
   private currentUpdatedPropsValueMap = new Map<PropertyKey, any>();
 
+  /**
+   * 沙箱名称
+   */
   name: string;
 
+  /**
+   * 代理对象，可以理解为子应用的 global/window 对象
+   */
   proxy: WindowProxy;
 
   globalContext: typeof window;
 
   type: SandBoxType;
 
+  /**
+   * 当前沙箱是否在运行中
+   * 执行 active 后,变成 true
+   * 执行 inactive 后,变成 false
+   */
   sandboxRunning = true;
 
   latestSetProp: PropertyKey | null = null;
@@ -49,6 +64,7 @@ export default class LegacySandbox implements SandBox {
   }
 
   active() {
+    // 不在运行状态将收集到的 currentUpdatedPropsValueMap 存入 globalContext
     if (!this.sandboxRunning) {
       this.currentUpdatedPropsValueMap.forEach((v, p) => this.setWindowProp(p, v));
     }
@@ -57,13 +73,6 @@ export default class LegacySandbox implements SandBox {
   }
 
   inactive() {
-    if (process.env.NODE_ENV === 'development') {
-      console.info(`[qiankun:sandbox] ${this.name} modified global properties restore...`, [
-        ...this.addedPropsMapInSandbox.keys(),
-        ...this.modifiedPropsOriginalValueMapInSandbox.keys(),
-      ]);
-    }
-
     // renderSandboxSnapshot = snapshot(currentUpdatedPropsValueMapForSnapshot);
     // restore global props to initial snapshot
     this.modifiedPropsOriginalValueMapInSandbox.forEach((v, p) => this.setWindowProp(p, v));
@@ -78,11 +87,19 @@ export default class LegacySandbox implements SandBox {
     this.type = SandBoxType.LegacyProxy;
     const { addedPropsMapInSandbox, modifiedPropsOriginalValueMapInSandbox, currentUpdatedPropsValueMap } = this;
 
+    // 原始的 window 对象
     const rawWindow = globalContext;
+    // 创建一个假的代理用的window对象
     const fakeWindow = Object.create(null) as Window;
 
+    /**
+     * proxy 的 set 实际执行逻辑
+     */
     const setTrap = (p: PropertyKey, value: any, originalValue: any, sync2Window = true) => {
       if (this.sandboxRunning) {
+        // 所有的属性设置和更新都会先记录在 addedPropsMapInSandbox 或 modifiedPropsOriginalValueMapInSandbox 中，
+        // 然后统一记录到 currentUpdatedPropsValueMap 中。
+
         if (!rawWindow.hasOwnProperty(p)) {
           addedPropsMapInSandbox.set(p, value);
         } else if (!modifiedPropsOriginalValueMapInSandbox.has(p)) {
@@ -97,39 +114,41 @@ export default class LegacySandbox implements SandBox {
           (rawWindow as any)[p] = value;
         }
 
+        // 存储最后一次更新的属性
         this.latestSetProp = p;
 
         return true;
-      }
-
-      if (process.env.NODE_ENV === 'development') {
-        console.warn(`[qiankun] Set window.${p.toString()} while sandbox destroyed or inactive in ${name}!`);
       }
 
       // 在 strict-mode 下，Proxy 的 handler.set 返回 false 会抛出 TypeError，在沙箱卸载的情况下应该忽略错误
       return true;
     };
 
+    /**
+     * 沙箱的实现逻辑
+     * 拦截对全局对象的属性访问和修改操作
+     * 如果需要拦截深层次的对象属性操作，需要在每一层对象上都设置 Proxy，这会增加实现的复杂性和性能开销。
+     */
     const proxy = new Proxy(fakeWindow, {
       set: (_: Window, p: PropertyKey, value: any): boolean => {
+
         const originalValue = (rawWindow as any)[p];
         return setTrap(p, value, originalValue, true);
       },
 
       get(_: Window, p: PropertyKey): any {
-        // avoid who using window.window or window.self to escape the sandbox environment to touch the really window
-        // or use window.top to check if an iframe context
+        // 避免使用 window.window 或 window.self 来逃离沙箱环境来得到真正的窗口或使用 window.top 检查 iframe 上下文是否存在
         // see https://github.com/eligrey/FileSaver.js/blob/master/src/FileSaver.js#L13
         if (p === 'top' || p === 'parent' || p === 'window' || p === 'self') {
           return proxy;
         }
 
+          // 直接从 window 对象中取值
         const value = (rawWindow as any)[p];
         return rebindTarget2Fn(rawWindow, value);
       },
 
-      // trap in operator
-      // see https://github.com/styled-components/styled-components/blob/master/packages/styled-components/src/constants.js#L12
+      // 操作符陷阱
       has(_: Window, p: string | number | symbol): boolean {
         return p in rawWindow;
       },

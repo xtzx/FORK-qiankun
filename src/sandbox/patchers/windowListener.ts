@@ -14,8 +14,12 @@ type ListenerMapObject = {
   rawListener: EventListenerOrEventListenerObject;
 };
 
+// 定义了默认的事件监听选项
 const DEFAULT_OPTIONS: AddEventListenerOptions = { capture: false, once: false, passive: false };
 
+/**
+ * 将传入的配置转换成标准的事件监听配置
+ */
 const normalizeOptions = (rawOptions?: boolean | AddEventListenerOptions): AddEventListenerOptions => {
   if (typeof rawOptions === 'object') {
     return rawOptions ?? DEFAULT_OPTIONS;
@@ -73,7 +77,14 @@ const addCacheListener = (
   return cacheListener;
 };
 
+/**
+ * 劫持 window 对象上的 addEventListener 和 removeEventListener 方法
+ * 支持配置 once 参数
+ * 如果重复执行了 addListener 会忽略
+ */
 export default function patch(global: WindowProxy) {
+  // 存储全部事件处理函数 包括 listener、options 和 rawListener。
+  // 事件类型: [ListenerMapObject, ListenerMapObject, ListenerMapObject]
   const listenerMap = new Map<string, ListenerMapObject[]>();
 
   global.addEventListener = (
