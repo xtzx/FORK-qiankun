@@ -44,10 +44,21 @@ nativeGlobal.__proxyAttachContainerConfigMap__ =
 const proxyAttachContainerConfigMap: WeakMap<WindowProxy, ContainerConfig> =
   nativeGlobal.__proxyAttachContainerConfigMap__;
 
+/**
+ * 将每个 HTMLElement 和其所属的子应用（通过 ContainerConfig）进行关联
+ * 通过 document.createElement 创建的元素
+ */
 const elementAttachContainerConfigMap = new WeakMap<HTMLElement, ContainerConfig>();
+
 const docCreatePatchedMap = new WeakMap<typeof document.createElement, typeof document.createElement>();
 const patchMap = new WeakMap<any, any>();
 
+
+
+
+
+/**
+ */
 function patchDocument(cfg: { sandbox: SandBox; speedy: boolean }) {
   const { sandbox, speedy } = cfg;
 
@@ -148,9 +159,14 @@ function patchDocument(cfg: { sandbox: SandBox; speedy: boolean }) {
 
     // patch MutationObserver.prototype.observe to avoid type error
     // https://github.com/umijs/qiankun/issues/2406
+    // 获取原生 MutationObserver.observe 方法，后续我们需要对这个方法进行重写（劫持）
     const nativeMutationObserverObserveFn = MutationObserver.prototype.observe;
+
+    // 未劫持
     if (!patchMap.has(nativeMutationObserverObserveFn)) {
       const observe = function observe(this: MutationObserver, target: Node, options: MutationObserverInit) {
+        // 因为在沙箱环境中，document 可能已经被代理成 proxyDocument，所以需要确保观察的目标节点是正确的。
+        // 保沙箱内的 document 操作不会影响全局的 document 对象。
         const realTarget = target instanceof Document ? nativeDocument : target;
         return nativeMutationObserverObserveFn.call(this, realTarget, options);
       };
@@ -160,6 +176,7 @@ function patchDocument(cfg: { sandbox: SandBox; speedy: boolean }) {
     }
 
     // patch Node.prototype.compareDocumentPosition to avoid type error
+    // 类似
     const prevCompareDocumentPosition = Node.prototype.compareDocumentPosition;
     if (!patchMap.has(prevCompareDocumentPosition)) {
       Node.prototype.compareDocumentPosition = function compareDocumentPosition(this: Node, node) {
@@ -172,6 +189,7 @@ function patchDocument(cfg: { sandbox: SandBox; speedy: boolean }) {
     // patch parentNode getter to avoid document === html.parentNode
     // https://github.com/umijs/qiankun/issues/2408#issuecomment-1446229105
     const parentNodeDescriptor = Object.getOwnPropertyDescriptor(Node.prototype, 'parentNode');
+
     if (parentNodeDescriptor && !patchMap.has(parentNodeDescriptor)) {
       const { get: parentNodeGetter, configurable } = parentNodeDescriptor;
       if (parentNodeGetter && configurable) {
@@ -209,9 +227,13 @@ function patchDocument(cfg: { sandbox: SandBox; speedy: boolean }) {
     };
   }
 
+  //  非 speed 模式
+
   const docCreateElementFnBeforeOverwrite = docCreatePatchedMap.get(document.createElement);
+  // 缓存判断
   if (!docCreateElementFnBeforeOverwrite) {
     const rawDocumentCreateElement = document.createElement;
+    // 重写 document.createElement
     Document.prototype.createElement = function createElement<K extends keyof HTMLElementTagNameMap>(
       this: Document,
       tagName: K,
@@ -228,7 +250,9 @@ function patchDocument(cfg: { sandbox: SandBox; speedy: boolean }) {
       return element;
     };
 
-    // It means it have been overwritten while createElement is an own property of document
+    // document 本身是从 Document.prototype 继承的，正常情况下 createElement 是定义在 Document.prototype 上的。
+    // 如果 document 对象本身没有 createElement 属性（即继承自 Document.prototype），直接修改 Document.prototype 即可。
+    // 但是如果 document 对象本身存在 createElement 属性（意味着它被某些情况下重写了），我们需要将其重新赋值为我们自定义的 createElement。
     if (document.hasOwnProperty('createElement')) {
       document.createElement = Document.prototype.createElement;
     }
@@ -271,6 +295,7 @@ export function patchStrictSandbox(
   // all dynamic style sheets are stored in proxy container
   const { dynamicStyleSheetElements } = containerConfig;
 
+  // TODO: elementAttachContainerConfigMap 没有删除逻辑 不知道此处有没有问题
   const unpatchDynamicAppendPrototypeFunctions = patchHTMLDynamicAppendPrototypeFunctions(
     (element) => elementAttachContainerConfigMap.has(element),
     (element) => elementAttachContainerConfigMap.get(element)!,

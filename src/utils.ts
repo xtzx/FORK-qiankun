@@ -89,6 +89,11 @@ export function isCallable(fn: any): boolean {
 }
 
 const frozenPropertyCacheMap = new WeakMap<any, Record<PropertyKey, boolean>>();
+
+/**
+ * 检查给定对象的某个属性是否被冻结（即，不能被修改、删除或重定义）
+ *
+ */
 export function isPropertyFrozen(target: any, p?: PropertyKey): boolean {
   if (!target || !p) {
     return false;
@@ -101,6 +106,12 @@ export function isPropertyFrozen(target: any, p?: PropertyKey): boolean {
   }
 
   const propertyDescriptor = Object.getOwnPropertyDescriptor(target, p);
+
+// 一个属性被冻结的条件是：
+// 属性描述符的 configurable 属性为 false（表示不可重新配置），
+// 且：
+//  要么 writable 为 false（表示不可写），
+//  要么属性有 getter，但没有 setter（意味着属性是只读的）。
   const frozen = Boolean(
     propertyDescriptor &&
       propertyDescriptor.configurable === false &&

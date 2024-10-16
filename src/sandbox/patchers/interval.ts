@@ -12,6 +12,7 @@ const rawWindowClearInterval = window.clearInterval;
 /**
  * 劫持定时器
  * 防止全局计时器泄露污染。
+ * 让 global 执行 window 上的定时器,同时实现清理副作用功能
  */
 export default function patch(global: Window) {
   let intervals: number[] = [];

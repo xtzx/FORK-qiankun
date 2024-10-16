@@ -52,10 +52,8 @@ export function createSandboxContainer(
     sandbox = new SnapshotSandbox(appName);
   }
 
-  进度在这儿
   // 在应用启动时对沙箱进行补丁处理。
   // 它根据沙箱的类型（LegacyProxy、Proxy、Snapshot）选择不同的补丁函数，并返回这些补丁函数的执行结果。
-  // TODO:222
   const bootstrappingFreers = patchAtBootstrapping(
     appName,
     elementGetter,
@@ -85,9 +83,11 @@ export function createSandboxContainer(
       /* ------------------------------------------ 1. 启动/恢复 沙箱------------------------------------------ */
       sandbox.active();
 
-      // TODO:
+      // 存储了在应用启动（bootstrapping）阶段记录的副作用重建函数
+      // 开始是空 unmount 执行后才会有 sideEffectsRebuilders
       const sideEffectsRebuildersAtBootstrapping = sideEffectsRebuilders.slice(0, bootstrappingFreers.length);
-      // 浅复制 bootstrappingFreers
+      // 存储了在应用挂载（mounting）阶段记录的副作用重建函数
+      // 开始是空 unmount 执行后才会有 sideEffectsRebuilders
       const sideEffectsRebuildersAtMounting = sideEffectsRebuilders.slice(bootstrappingFreers.length);
 
       // must rebuild the side effects which added at bootstrapping firstly to recovery to nature state
@@ -97,12 +97,11 @@ export function createSandboxContainer(
 
       /* ------------------------------------------ 2. 开启全局变量补丁 ------------------------------------------*/
       // render 沙箱启动时开始劫持各类全局监听，尽量不要在应用初始化阶段有 事件监听/定时器 等副作用
-      // TODO:111
       // 劫持了各类全局监听，并返回了解除劫持的 free 函数。在卸载应用时调用 free 函数解除这些全局监听的劫持行为
       mountingFreers = patchAtMounting(appName, elementGetter, sandbox, scopedCSS, excludeAssetFilter, speedySandBox);
 
       /* ------------------------------------------ 3. 重置一些初始化时的副作用 ------------------------------------------*/
-      // 存在 rebuilder 则表明有些副作用需要重建
+      // 存在 rebuilder 则表明有些副作用需要重建,,
       if (sideEffectsRebuildersAtMounting.length) {
         sideEffectsRebuildersAtMounting.forEach((rebuild) => rebuild());
       }
@@ -115,8 +114,7 @@ export function createSandboxContainer(
      * 恢复 global 状态，使其能回到应用加载之前的状态
      */
     async unmount() {
-      // record the rebuilders of window side effects (event listeners or timers)
-      // note that the frees of mounting phase are one-off as it will be re-init at next mounting
+      // 卸载时候执行清除副作用函数 同时清除副作用函数会返回一个重建函数,存入
       sideEffectsRebuilders = [...bootstrappingFreers, ...mountingFreers].map((free) => free());
 
       sandbox.inactive();
